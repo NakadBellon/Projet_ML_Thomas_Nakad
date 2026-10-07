@@ -11,7 +11,7 @@ Prédire si un vin rouge est **bon (note ≥ 7)** à partir de ses mesures physi
 | Données | 1 599 vins rouges, 11 variables, 13,6 % de bons vins |
 | Sélection de variables | 8 variables retenues (filter, wrapper, embedded) |
 | Modèles comparés | Arbre de décision, Naive Bayes, régression logistique, k-NN (k = 1, 3, 5, 7), SVM (noyaux linéaire, RBF, sigmoïde, polynomial) |
-| Optimisation | Grid Search et Random Search, validation croisée à 5 plis, critère du TP1 (moyenne accuracy + rappel) |
+| Optimisation | Grid Search et Random Search, validation croisée à 5 plis, critère : moyenne accuracy + rappel |
 | **Modèle retenu** | **Régression logistique** (`C=10`, `class_weight='balanced'`) |
 | Test (400 vins) | Moyenne accuracy + rappel = 0,812 · rappel = 0,844 · précision = 0,319 · AUC = 0,869 |
 

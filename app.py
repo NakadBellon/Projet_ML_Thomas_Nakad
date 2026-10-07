@@ -1,4 +1,4 @@
-"""Application web : prédiction de la qualité d'un vin (bonus du projet).
+"""Application web : prédiction de la qualité d'un vin.
 
 Lancement : streamlit run app.py
 """

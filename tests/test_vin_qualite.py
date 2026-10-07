@@ -67,7 +67,7 @@ def test_metriques_entre_0_et_1(modele_et_metriques):
 
 def test_resultats_du_notebook(modele_et_metriques):
     _, metriques = modele_et_metriques
-    assert round(metriques['Moy. acc+rappel (TP1)'], 3) == 0.812
+    assert round(metriques['Moy. acc+rappel'], 3) == 0.812
     assert round(metriques['Rappel'], 3) == 0.844
 
 

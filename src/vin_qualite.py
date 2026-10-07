@@ -1,7 +1,7 @@
 """Fonctions du projet « Classification de la qualité du vin ».
 
-Ce module reprend les étapes du notebook projet_qualite_vin.ipynb pour les bonus
-(tests unitaires et application web). Lancé directement (python src/vin_qualite.py),
+Ce module reprend les étapes du notebook projet_qualite_vin.ipynb pour les tests
+unitaires et l'application web. Lancé directement (python src/vin_qualite.py),
 il réentraîne le modèle final et le sauvegarde dans models/modele_final.joblib.
 """
 import os
@@ -49,7 +49,7 @@ def preparer_donnees(fichier=FICHIER_DONNEES):
 
 
 def separer(X, Y):
-    """Séparation du TP1 : 25 % de test, random_state=1."""
+    """Séparation apprentissage / test : 25 % de test, random_state=1."""
     return train_test_split(X, Y, test_size=0.25, random_state=1)
 
 
@@ -60,7 +60,7 @@ def selectionner(X):
 
 
 def moyenne_acc_rappel(y_vrai, y_pred):
-    """Critère du TP1 : moyenne de l'accuracy et du rappel."""
+    """Moyenne de l'accuracy et du rappel."""
     return (accuracy_score(y_vrai, y_pred) + recall_score(y_vrai, y_pred)) / 2
 
 
@@ -72,7 +72,7 @@ def evaluer_modele(modele, Xte, Yte):
             'Rappel': recall_score(Yte, Ypred),
             'F1': f1_score(Yte, Ypred),
             'AUC': roc_auc_score(Yte, modele.predict_proba(Xte)[:, 1]),
-            'Moy. acc+rappel (TP1)': moyenne_acc_rappel(Yte, Ypred)}
+            'Moy. acc+rappel': moyenne_acc_rappel(Yte, Ypred)}
 
 
 def entrainer_et_sauvegarder(fichier=FICHIER_DONNEES, chemin=CHEMIN_MODELE):
