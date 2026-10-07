@@ -10,354 +10,304 @@ lang: fr
 
 ## 1.1 Contexte et objectif
 
-La qualité d'un vin dépend de nombreux paramètres physico-chimiques : acidité, pH, taux d'alcool, sucre résiduel, etc. L'objectif du projet est de construire un **modèle de classification supervisée** capable de prédire si un vin est **bon** à partir de ces mesures. Conformément au sujet, le problème est posé sous forme **binaire** : un vin est « bon » (classe 1) si sa note de qualité est **supérieure ou égale à 7**, sinon il appartient à la classe 0.
+La qualité d'un vin dépend de nombreux paramètres physico-chimiques : acidité, pH, taux d'alcool, sucre résiduel, etc. L'objectif du projet est de construire un **modèle de classification supervisée** qui prédit si un vin est **bon** à partir de ces mesures. Conformément au sujet, le problème est posé sous forme binaire : un vin est « bon » (classe 1) si sa note de qualité est **supérieure ou égale à 7**, sinon il appartient à la classe 0.
 
 ## 1.2 Données
 
-Nous utilisons le jeu *Wine Quality* (UCI, Cortez et al., 2009), qui décrit des vins portugais *vinho verde* :
+Nous utilisons le jeu *Red Wine Quality* (Cortez et al., 2009) :
 
-- 1 599 vins rouges et 4 898 vins blancs, soit **6 497 vins** ;
+- **1 599 vins rouges** portugais (*vinho verde*) ;
 - **11 variables physico-chimiques** continues : acidité fixe, acidité volatile, acide citrique, sucre résiduel, chlorures, SO2 libre, SO2 total, densité, pH, sulfates, alcool ;
 - une note de qualité de 0 à 10, attribuée par des dégustateurs.
 
-Nous avons choisi d'utiliser **les deux fichiers** (rouge et blanc) : l'échantillon est quatre fois plus grand qu'avec les seuls rouges, et le type de vin constitue une variable catégorielle supplémentaire à encoder.
-
 ## 1.3 Démarche
 
-Le travail suit les quatre étapes du sujet : prétraitement (section 2), modélisation (section 3), évaluation (section 4) et optimisation des hyperparamètres (section 5). Le code est entièrement contenu dans le notebook `projet_qualite_vin.ipynb`. Il reprend les conventions des TP du cours :
+Le travail suit les quatre étapes du sujet : prétraitement (section 2), modélisation (section 3), évaluation (section 4) et optimisation des hyperparamètres (section 5). Le code, contenu dans le notebook `projet_qualite_vin.ipynb`, reprend celui des TP du cours :
 
-- chargement avec `read_csv`, passage en tableaux numpy (`values`), comptage des classes avec `Counter` ;
-- séparation avec `train_test_split` (25 % de test, `random_state=1`) ;
-- normalisation avec `StandardScaler` ajusté sur l'apprentissage ;
-- affichage de `confusion_matrix` et `classification_report` pour chaque modèle ;
-- une fonction de comparaison des modèles fondée sur la moyenne *accuracy + rappel* du TP1, complétée par les métriques demandées dans le sujet.
+- TP1 et TP3 : chargement, `Counter` pour les classes, `train_test_split` (25 % de test, `random_state=1`), `StandardScaler`, arbre de décision (`entropy`), Naive Bayes, affichage de `confusion_matrix` et `classification_report` ;
+- TP SVM / KNN : k-NN avec k = 1, 3, 5, 7 et SVM avec quatre noyaux ;
+- TP Ensemble : `LogisticRegression(max_iter=1000)`, `class_weight='balanced'`, `cv=5` ;
+- TP régression : valeurs manquantes, matrice de corrélation, comparaison des performances sur l'apprentissage et sur le test.
+
+Pour comparer les modèles, nous utilisons le critère du TP1 : la **moyenne de l'accuracy et du rappel**.
 
 # 2. Prétraitement des données
 
 ## 2.1 Statistiques descriptives
 
-Les 11 variables sont continues et d'échelles très différentes : de quelques centièmes de g/L pour les chlorures (moyenne 0,056) à plus de 100 mg/L pour le SO2 total (moyenne 116). La note de qualité varie de 3 à 9 ; l'essentiel des vins est noté 5 ou 6 (figure 1).
+Les 11 variables sont continues et d'échelles très différentes : de quelques centièmes pour les chlorures (moyenne 0,087 g/L) à plusieurs dizaines pour le SO2 total (moyenne 46,5 mg/L). La note de qualité ne prend que les valeurs 3 à 8 ; la grande majorité des vins est notée 5 (681 vins) ou 6 (638 vins).
 
-![Distribution de la note de qualité par type de vin](figures/01_qualite_par_type.png)
+## 2.2 Valeurs manquantes
 
-## 2.2 Valeurs manquantes et doublons
-
-- **Valeurs manquantes :** aucune (`isnull().sum()` nul pour toutes les colonnes). Aucune imputation n'est donc nécessaire.
-- **Doublons :** le jeu contient **1 177 lignes strictement identiques**. Nous les supprimons. Une même observation pourrait sinon se retrouver à la fois dans l'apprentissage et dans le test, ce qui surestimerait les performances, en particulier celles du k-NN et de l'arbre de décision, qui mémorisent les exemples. Il reste 5 320 vins.
+`isnull().sum()` est nul pour toutes les colonnes : le jeu ne contient **aucune valeur manquante**, aucun traitement n'est nécessaire.
 
 ## 2.3 Valeurs aberrantes
 
-Les boxplots (figure 2) et la règle des moustaches ($[Q_1 - 1{,}5\,IQR \,;\, Q_3 + 1{,}5\,IQR]$) signalent au moins une valeur atypique pour **20,6 % des vins**. Nous ne les supprimons pas toutes, pour trois raisons :
+Les boxplots (figure 1) montrent des valeurs au-delà des moustaches pour la plupart des variables. Un quart des vins (25,3 %) a au moins une valeur atypique, surtout pour le sucre résiduel (155 vins), les chlorures (112), les sulfates (59) et le SO2 total (55).
 
-1. ce serait perdre un cinquième des données ;
-2. plusieurs distributions sont **asymétriques** (sucre résiduel, chlorures, sulfates), ce qui produit mécaniquement de nombreux points hors moustaches ;
-3. une partie des écarts vient du **mélange rouge / blanc** : les rouges ont nettement plus de chlorures et d'acidité fixe, et moins de SO2 total.
+![Boxplots des 11 variables physico-chimiques](figures/01_boxplots.png)
 
-Nous supprimons uniquement les **valeurs extrêmes**, situées à plus de **5 écarts-types** de la moyenne (|z-score| > 5), soit **62 vins** (1,2 %). Il s'agit de points isolés, comme 65,8 g/L de sucre résiduel ou 289 mg/L de SO2 libre, qui fausseraient la normalisation et les méthodes fondées sur des distances. Il reste **5 258 vins**.
+Ces variables ont des distributions asymétriques (figure 4), ce qui produit mécaniquement beaucoup de points hors moustaches. Les valeurs restent physiquement plausibles pour des vins : ce sont des valeurs atypiques, pas des erreurs. **Nous les conservons**, et nous en tenons compte dans le choix des modèles : le k-NN est sensible au bruit, alors que l'arbre de décision ne dépend que de seuils.
 
-![Boxplots des 11 variables physico-chimiques](figures/02_boxplots.png)
+## 2.4 Encodage des variables catégorielles
 
-## 2.4 Encodage et transformation en classification binaire
+Toutes les variables explicatives sont numériques : il n'y a **aucune variable catégorielle** à encoder.
 
-- La variable catégorielle `type` est codée en binaire : `type_rouge` = 1 pour un rouge, 0 pour un blanc (*data conversion*, séance 1).
-- La cible est créée selon la consigne : `bon_vin = 1` si `quality ≥ 7`. La note `quality` est ensuite retirée des variables explicatives.
+## 2.5 Transformation en classification binaire et distribution des classes
 
-Le modèle dispose ainsi de **12 variables explicatives** (11 mesures + type).
+La cible est créée selon la consigne : `bon_vin = 1` si `quality ≥ 7`, puis la note est retirée des variables explicatives.
 
-## 2.5 Distribution des classes
+Le jeu est **déséquilibré** : **13,6 %** de bons vins (217 sur 1 599) contre 86,4 % (figure 2). Un modèle qui répondrait toujours « pas bon » atteindrait déjà 86 % d'accuracy. L'accuracy seule est donc trompeuse, d'où l'intérêt du critère du TP1, qui tient compte du **rappel**, c'est-à-dire de la part des bons vins réellement détectés.
 
-Le jeu est **déséquilibré** : **19,1 %** de bons vins contre 80,9 % (figure 3). Les bons vins sont plus fréquents chez les blancs (20,9 %) que chez les rouges (13,7 %).
-
-![Nombre d'instances de chaque classe (code du TP1 : Counter + plt.bar)](figures/03_classes.png)
-
-Ce déséquilibre guide toute la suite :
-
-- un modèle qui répondrait toujours « pas bon » atteindrait déjà 81 % d'accuracy : **l'accuracy seule est trompeuse** ;
-- nous suivons en priorité le **F1-score** de la classe « bon vin », le **rappel**, la **précision** et l'**AUC** ;
-- la séparation apprentissage / test est **stratifiée** (`stratify=Y`) ;
-- l'optimisation teste le paramètre `class_weight='balanced'`, qui pondère davantage la classe minoritaire.
+![Nombre d'instances de chaque classe (code du TP1)](figures/02_classes.png)
 
 ## 2.6 Corrélations
 
-![Matrice de corrélation de Pearson](figures/04_matrice_correlation.png)
+![Matrice de corrélation (code du TP régression)](figures/03_matrice_correlation.png)
 
-Les variables les plus liées à la qualité (figure 5) sont :
+**Corrélation avec la cible.** Les variables les plus liées à la qualité sont :
 
 | Variable | Corrélation avec `bon_vin` |
 |---|---|
-| alcohol | +0,42 |
-| density | −0,30 |
-| chlorides | −0,19 |
-| volatile acidity | −0,14 |
-| residual sugar | −0,09 |
+| alcohol | +0,41 |
+| volatile acidity | −0,27 |
+| citric acid | +0,21 |
+| sulphates | +0,20 |
+| density | −0,15 |
+| total sulfur dioxide | −0,14 |
 
-Plusieurs variables sont **redondantes** (|r| > 0,6) : densité et alcool (−0,69), SO2 libre et SO2 total (+0,72), type rouge avec SO2 total (−0,70) et avec l'acidité volatile (+0,65). Ces corrélations contredisent l'hypothèse d'**indépendance** de Naive Bayes (séance 3).
+Le sucre résiduel (+0,05), le pH (−0,06) et le SO2 libre (−0,07) n'ont presque pas de lien avec la qualité.
 
-![Corrélation de chaque variable avec la cible](figures/05_correlation_cible.png)
+**Corrélations entre variables.** L'acidité fixe est fortement liée à l'acide citrique (+0,67), à la densité (+0,67) et au pH (−0,68). Le SO2 libre et le SO2 total sont aussi liés (+0,67). Ces variables sont en partie redondantes, ce qui contredit l'hypothèse d'**indépendance** de Naive Bayes (séance 3).
 
-## 2.7 Visualisations
+## 2.7 Histogrammes
 
-Les histogrammes (figure 6) confirment que plusieurs variables sont asymétriques et ne suivent pas une loi normale : sucre résiduel, chlorures, SO2 libre, sulfates. C'est une seconde hypothèse de Naive Bayes gaussien qui n'est pas respectée. Les boxplots par classe (figure 7) montrent que les bons vins sont **plus alcoolisés**, **moins denses**, et contiennent **moins de chlorures** et **moins d'acidité volatile**.
+![Histogrammes des variables](figures/04_histogrammes.png)
 
-![Histogrammes des variables](figures/06_histogrammes.png)
-
-![Variables les plus discriminantes selon la classe](figures/07_boxplots_par_classe.png)
+Plusieurs variables sont asymétriques et ne suivent pas une loi normale (sucre résiduel, chlorures, SO2 libre et total, sulfates). C'est une seconde hypothèse de Naive Bayes gaussien qui n'est pas respectée.
 
 ## 2.8 Séparation et normalisation
 
-- `train_test_split(X, Y, test_size=0.25, random_state=1, stratify=Y)` : **3 943 vins** en apprentissage, **1 315** en test, avec 19,1 % de bons vins dans chaque partie.
-- `StandardScaler` est ajusté sur l'apprentissage seul, puis appliqué au test, ce qui évite toute fuite d'information du test vers l'apprentissage.
+- `train_test_split(X, Y, test_size=0.25, random_state=1)` : **1 199 vins** en apprentissage et **400** en test. Le test contient 45 bons vins (11,3 %, contre 14,3 % dans l'apprentissage).
+- `StandardScaler` est ajusté sur l'apprentissage seul, puis appliqué au test (code du TP1).
 
 ## 2.9 Sélection de variables
 
-Nous appliquons les trois familles de méthodes vues en séance 1, sur la base d'apprentissage uniquement :
+Nous appliquons les trois familles de méthodes de la séance 1, sur l'apprentissage uniquement :
 
 - **Filter** : coefficient de Pearson, Chi² (sur données ramenées dans [0, 1] par `MinMaxScaler`), information mutuelle ;
 - **Wrapper** : élimination récursive (RFE) avec une régression logistique ;
-- **Embedded** : régressions Lasso (pénalité L1) et Ridge (pénalité L2).
+- **Embedded** : régressions Lasso et Ridge (régularisation L1 et L2, séance 5).
 
-Chaque méthode retient ses 6 meilleures variables (les coefficients non nuls pour le Lasso), puis nous comptons les votes (figure 8).
+Pour obtenir une liste finale, chaque méthode retient environ la moitié des variables (les 6 meilleures sur 11, ou les coefficients non nuls pour le Lasso). Nous gardons les variables retenues par au moins la moitié des méthodes (3 sur 6).
 
 | Variable | Votes (sur 6) | Variable | Votes (sur 6) |
 |---|---|---|---|
-| alcohol | 6 | citric acid | 2 |
-| residual sugar | 5 | fixed acidity | 2 |
-| density | 5 | sulphates | 2 |
-| volatile acidity | 4 | type_rouge | 2 |
-| chlorides | 4 | total sulfur dioxide | 1 |
-| pH | 3 | free sulfur dioxide | 1 |
+| volatile acidity | 6 | fixed acidity | 3 |
+| alcohol | 6 | chlorides | 3 |
+| sulphates | 6 | density | 3 |
+| total sulfur dioxide | 5 | pH | 1 |
+| citric acid | 4 | free sulfur dioxide | 0 |
+| | | residual sugar | 0 |
 
-![Nombre de méthodes qui retiennent chaque variable](figures/08_selection_variables.png)
+: Tableau 1 – Nombre de méthodes qui retiennent chaque variable
 
-Les 6 variables qui obtiennent au moins 3 votes sont : alcool, sucre résiduel, densité, acidité volatile, chlorures et pH. Nous avons comparé les modèles entraînés sur ces 6 variables et sur les 12 (tableau 1).
-
-| Modèle | F1 (12 var.) | F1 (6 var.) | AUC (12 var.) | AUC (6 var.) |
-|---|---|---|---|---|
-| k-NN (k=5) | 0,492 | 0,437 | 0,786 | 0,772 |
-| Naive Bayes | 0,465 | **0,475** | 0,764 | 0,765 |
-| Arbre de décision | 0,442 | 0,395 | 0,655 | 0,626 |
-| Régression logistique | 0,428 | 0,396 | 0,823 | 0,816 |
-| SVM RBF | 0,396 | 0,324 | 0,818 | 0,749 |
-
-: Tableau 1 – Effet de la sélection de variables (test, données normalisées)
-
-La sélection **dégrade** la plupart des modèles. Seul Naive Bayes progresse légèrement, parce qu'en retirant des variables corrélées on se rapproche de son hypothèse d'indépendance. Les variables écartées apportent donc encore une information utile, notamment aux modèles non linéaires. Avec seulement 12 variables, il n'y a pas de risque d'explosion dimensionnelle. **Nous conservons donc les 12 variables** ; la sélection sert surtout à l'interprétation, en désignant les variables clés de la qualité.
+**8 variables sur 11 sont retenues.** Les trois variables écartées (pH, SO2 libre, sucre résiduel) sont les moins liées à la qualité, et le SO2 libre est en outre redondant avec le SO2 total. La suite de l'étude utilise ces 8 variables ; la normalisation est refaite sur elles.
 
 # 3. Modélisation
 
 ## 3.1 Choix et justification des modèles
 
 | Modèle | Type | Propriétés théoriques | Adaptation à nos données |
-|---|---|---|---|
-| Régression logistique | Linéaire | Sigmoïde appliquée à $wx+b$ (séance 2), sortie probabiliste, faible variance | Sensible à l'échelle et aux variables corrélées ; peut manquer les relations non linéaires |
-| k-NN | Non linéaire | Vote des k plus proches voisins, frontière très flexible | Fondé sur une distance : normalisation indispensable ; sensible au bruit et au déséquilibre |
-| Arbre de décision | Non linéaire | Partitions successives, critère d'entropie et gain d'information (ID3 / C4.5, séance 2) ; seuils pour les attributs continus | Insensible à l'échelle, interprétable ; forte variance sans limite de profondeur |
-| Naive Bayes gaussien | Non linéaire | Règle de Bayes, variables indépendantes et gaussiennes dans chaque classe (séance 3) | Hypothèses non respectées (variables corrélées et asymétriques) → biais attendu |
-| SVM linéaire | Linéaire | Hyperplan de marge maximale | Sensible à l'échelle |
-| SVM noyau RBF | Non linéaire | Marge maximale dans un espace transformé par un noyau gaussien | Capture les non-linéarités ; `C` et `gamma` règlent le compromis biais / variance |
+|------------|--------|--------------------|--------------------|
+| Arbre de décision (`entropy`) | Non linéaire | Partitions successives par gain d'information (séance 2) | Insensible à l'échelle et aux valeurs atypiques ; sans limite de profondeur, risque de sur-apprentissage |
+| Naive Bayes gaussien | Non linéaire | Règle de Bayes, variables indépendantes et gaussiennes (séance 3) | Hypothèses non respectées : variables corrélées et asymétriques |
+| Régression logistique | Linéaire | Sigmoïde appliquée à $wx+b$ (séance 2) | Frontière linéaire |
+| k-NN (k = 1, 3, 5, 7) | Non linéaire | Vote des k plus proches voisins ; k faible : biais faible, variance élevée (cours k-NN) | Normalisation indispensable ; sensible au bruit |
+| SVM linéaire | Linéaire | Hyperplan de marge maximale ; C règle le compromis marge / erreurs (cours SVM) | Sensible à l'échelle |
+| SVM à noyau (`rbf`, `sigmoid`, `poly` degré 2) | Non linéaire | Séparation linéaire dans un espace transformé par un noyau | Le noyau RBF dépend de distances (TP régression B.11) |
 
-Ce choix permet de comparer des modèles **linéaires** et **non linéaires**, afin de savoir si la frontière entre bons et moins bons vins est simple ou non.
+Comme dans le TP SVM / KNN, nous testons quatre valeurs de k et quatre noyaux SVM, soit 11 modèles.
 
-## 3.2 Protocole d'évaluation
+## 3.2 Protocole
 
-Comme demandé dans le TP1, une fonction `evaluer_modele` entraîne chaque modèle puis calcule, sur le test : accuracy, précision, rappel, F1-score, AUC, la moyenne accuracy + rappel du TP1, ainsi que l'accuracy et le F1 sur l'apprentissage (pour l'analyse biais / variance). Elle affiche aussi la matrice de confusion et le rapport de classification. L'arbre de décision reprend la configuration du TP1 (`criterion='entropy'`, `random_state=0`).
+Comme le demande le TP1, une fonction `evaluer_modele` entraîne chaque modèle et calcule, sur le test : accuracy, rappel et leur moyenne (critère du TP1), ainsi que la précision, le F1 et l'AUC demandés par le sujet. Elle calcule aussi l'accuracy et le critère du TP1 sur l'apprentissage, pour l'analyse biais / variance. Elle affiche enfin la matrice de confusion et le rapport de classification, comme dans les TP.
 
 ## 3.3 Effet de la normalisation
 
-Chaque modèle est entraîné sur les données brutes, puis sur les données normalisées (parties 3 et 4 du TP1).
+Chaque modèle est entraîné sans puis avec normalisation (parties 3 et 4 du TP1).
 
-| Modèle | F1 brut | F1 normalisé | AUC brut | AUC normalisé |
-|---|---|---|---|---|
-| SVM RBF | 0,000 | 0,396 | 0,788 | 0,818 |
-| k-NN (k=5) | 0,279 | 0,492 | 0,689 | 0,786 |
-| Régression logistique | 0,403 | 0,428 | 0,819 | 0,823 |
-| Arbre de décision | 0,439 | 0,442 | 0,653 | 0,655 |
-| Naive Bayes | 0,474 | 0,465 | 0,767 | 0,764 |
-| SVM linéaire | 0,321* | 0,000 | 0,589 | 0,798 |
+| Modèle | Moy. TP1 non normalisé | Moy. TP1 normalisé |
+|---|---|---|
+| Arbre de décision | 0,726 | 0,728 |
+| Naive Bayes | 0,774 | 0,771 |
+| Régression logistique | 0,603 | 0,588 |
+| KNN (K=1) | 0,656 | 0,735 |
+| KNN (K=3) | 0,631 | 0,636 |
+| KNN (K=5) | 0,639 | 0,727 |
+| KNN (K=7) | 0,604 | 0,677 |
+| Linear SVM | 0,444 | 0,444 |
+| RBF SVM | 0,456 | 0,608 |
+| Sigmoid SVM | 0,444 | 0,571 |
+| Polynomial (2) SVM | 0,444 | 0,444 |
 
-: Tableau 2 – Effet de la normalisation (* le SVM linéaire n'a pas convergé sur les données brutes)
+: Tableau 2 – Effet de la normalisation (critère du TP1 sur le test)
 
-- **k-NN** et **SVM RBF** progressent fortement. Leurs distances sont dominées, sans normalisation, par les variables de grande échelle (SO2) ; le SVM RBF prédisait même « pas bon » pour tous les vins.
-- **L'arbre de décision** est pratiquement inchangé : ses tests « variable > seuil » ne dépendent pas de l'échelle.
-- **Naive Bayes** est quasiment inchangé. Le léger écart vient de `var_smoothing`, qui ajoute à chaque variance une fraction de la plus grande variance du jeu.
-- **SVM linéaire** : une fois normalisé, il converge mais prédit « pas bon » pour **tous** les vins (F1 = 0). Avec 81 % de classe 0 et des classes qui se chevauchent, la fonction de coût ne justifie aucune prédiction positive. Son AUC de 0,80 montre pourtant que son score ordonne correctement les vins : c'est le **seuil de décision** qui est inadapté au déséquilibre.
+- Le **k-NN** et les **SVM à noyau RBF et sigmoïde** progressent nettement : ils reposent sur des distances, dominées sans normalisation par les variables de grande échelle (SO2 total).
+- L'**arbre de décision** et **Naive Bayes** sont pratiquement inchangés : l'arbre ne compare chaque variable qu'à un seuil, et Naive Bayes estime une loi par variable.
+- Le **SVM linéaire** et le **SVM polynomial** prédisent « pas bon » pour **tous** les vins, avec ou sans normalisation. Avec 86 % de vins de classe 0 et les paramètres par défaut, l'hyperplan ne justifie aucune prédiction « bon vin ».
 
-Nous travaillons désormais sur les **données normalisées et les 12 variables**.
+Nous travaillons ensuite sur les **données normalisées**.
 
 # 4. Évaluation des modèles
 
 ## 4.1 Comparaison des performances
 
-| Modèle | Accuracy | Précision | Rappel | F1 | AUC | Moy. acc+rappel (TP1) |
+| Modèle | Accuracy | Précision | Rappel | F1 | AUC | Moy. TP1 |
 |---|---|---|---|---|---|---|
-| k-NN (k=5) | 0,826 | 0,555 | 0,442 | **0,492** | 0,786 | 0,634 |
-| Naive Bayes | 0,734 | 0,377 | **0,606** | 0,465 | 0,764 | **0,670** |
-| Arbre de décision | 0,787 | 0,442 | 0,442 | 0,442 | 0,655 | 0,615 |
-| Régression logistique | 0,823 | 0,558 | 0,347 | 0,428 | **0,823** | 0,585 |
-| SVM RBF | **0,830** | **0,619** | 0,291 | 0,396 | 0,818 | 0,561 |
-| SVM linéaire | 0,809 | 0,000 | 0,000 | 0,000 | 0,798 | 0,405 |
+| Naive Bayes | 0,830 | 0,368 | **0,711** | 0,485 | 0,839 | **0,771** |
+| KNN (K=1) | 0,870 | 0,443 | 0,600 | 0,509 | 0,752 | 0,735 |
+| Arbre de décision | 0,878 | 0,464 | 0,578 | 0,515 | 0,747 | 0,728 |
+| KNN (K=5) | 0,898 | 0,543 | 0,556 | **0,549** | **0,881** | 0,727 |
+| KNN (K=7) | 0,888 | 0,500 | 0,467 | 0,483 | 0,870 | 0,677 |
+| KNN (K=3) | 0,872 | 0,429 | 0,400 | 0,414 | 0,793 | 0,636 |
+| RBF SVM | **0,905** | **0,667** | 0,311 | 0,424 | 0,841 | 0,608 |
+| Régression logistique | 0,888 | 0,500 | 0,289 | 0,366 | 0,864 | 0,588 |
+| Sigmoid SVM | 0,830 | 0,275 | 0,311 | 0,292 | 0,726 | 0,571 |
+| Linear SVM | 0,888 | 0,000 | 0,000 | 0,000 | 0,849 | 0,444 |
+| Polynomial (2) SVM | 0,888 | 0,000 | 0,000 | 0,000 | 0,718 | 0,444 |
 
-: Tableau 3 – Modèles de base sur le test (données normalisées)
+: Tableau 3 – Modèles de base sur le test (données normalisées), triés selon le critère du TP1
 
-![Comparaison des modèles de base](figures/09_comparaison_modeles.png)
+- Selon le critère du TP1, **Naive Bayes** est le meilleur modèle de base (0,771), grâce au meilleur rappel : il détecte 32 des 45 bons vins, malgré des hypothèses non respectées.
+- **L'accuracy est trompeuse** : le SVM linéaire et le SVM polynomial obtiennent 0,888 sans détecter un seul bon vin. C'est exactement l'accuracy d'un modèle qui répondrait toujours « pas bon » (355 vins sur 400).
+- Le **SVM RBF** a la meilleure accuracy (0,905) et la meilleure précision (0,667), mais ne détecte que 14 bons vins sur 45. La **régression logistique** est dans le même cas : avec leurs paramètres par défaut, les modèles linéaires privilégient la classe majoritaire.
 
-Aucun modèle ne se détache. Les accuracies (0,73 à 0,83) sont à peine supérieures à celle du classifieur trivial (0,81), alors que les rappels sont faibles. Les modèles les plus « prudents » (SVM RBF, régression logistique) ont la meilleure précision et la meilleure AUC, mais ne détectent qu'un bon vin sur trois. Naive Bayes, à l'inverse, détecte 61 % des bons vins au prix de nombreux faux positifs.
+## 4.2 Courbes ROC et AUC
 
-## 4.2 Matrices de confusion
+![Courbes ROC des 11 modèles (données normalisées)](figures/05_roc.png)
 
-![Matrices de confusion sur le test](figures/10_matrices_confusion.png)
+Les meilleures AUC sont celles du k-NN avec k = 5 (0,881) et k = 7 (0,870), puis de la régression logistique (0,864) et du SVM linéaire (0,849). La régression logistique et le SVM linéaire ont donc une **bonne AUC mais un rappel faible** : leur score classe bien les vins, mais le seuil de décision par défaut ne convient pas à des classes déséquilibrées. L'arbre non limité (0,747) et le k-NN avec k = 1 (0,752) ne produisent presque que des scores 0 ou 1, d'où des AUC plus faibles.
 
-Sur les 251 bons vins du test, le SVM RBF n'en reconnaît que 73 et la régression logistique 87, contre 152 pour Naive Bayes. Le SVM linéaire n'en reconnaît aucun.
+## 4.3 Compromis biais / variance
 
-## 4.3 Courbes ROC et AUC
+| Modèle | Moy. TP1 train | Moy. TP1 test | Écart |
+|---|---|---|---|
+| Naive Bayes | 0,766 | 0,771 | −0,005 |
+| KNN (K=1) | **1,000** | 0,735 | **0,265** |
+| Arbre de décision | **1,000** | 0,728 | **0,272** |
+| KNN (K=5) | 0,752 | 0,727 | 0,025 |
+| KNN (K=7) | 0,712 | 0,677 | 0,035 |
+| KNN (K=3) | 0,833 | 0,636 | 0,197 |
+| RBF SVM | 0,621 | 0,608 | 0,013 |
+| Régression logistique | 0,594 | 0,588 | 0,006 |
+| Sigmoid SVM | 0,552 | 0,571 | −0,019 |
+| Linear SVM | 0,428 | 0,444 | −0,016 |
+| Polynomial (2) SVM | 0,428 | 0,444 | −0,016 |
 
-![Courbes ROC des modèles de base](figures/11_roc_base.png)
-
-Les courbes ROC (séance 2) évaluent les modèles pour tous les seuils de décision. La régression logistique (AUC 0,823), le SVM RBF (0,818) et le SVM linéaire (0,798) séparent bien les classes. Leurs faibles rappels viennent donc du **seuil de 0,5**, mal adapté à une classe minoritaire, et non d'un manque d'information. L'arbre de décision non contraint a l'AUC la plus faible (0,655) : ses feuilles, presque toutes pures, ne produisent quasiment que des probabilités 0 ou 1, ce qui ne permet pas d'ordonner finement les vins.
-
-## 4.4 Compromis biais / variance
-
-| Modèle | F1 train | F1 test | Écart | F1 CV (moy.) | F1 CV (écart-type) |
-|---|---|---|---|---|---|
-| Régression logistique | 0,414 | 0,428 | −0,013 | 0,411 | 0,036 |
-| k-NN (k=5) | 0,638 | 0,492 | 0,145 | 0,448 | 0,025 |
-| Arbre de décision | **1,000** | 0,442 | **0,558** | 0,437 | 0,032 |
-| Naive Bayes | 0,507 | 0,465 | 0,042 | 0,504 | 0,025 |
-| SVM linéaire | 0,000 | 0,000 | 0,000 | 0,000 | 0,000 |
-| SVM RBF | 0,463 | 0,396 | 0,067 | 0,404 | 0,009 |
-
-: Tableau 4 – Erreur d'apprentissage, de test et validation croisée à 5 plis
-
-![Courbes de complexité : arbre (profondeur) et k-NN (nombre de voisins)](figures/12_biais_variance.png)
+: Tableau 4 – Critère du TP1 sur l'apprentissage et sur le test
 
 D'après le tableau sous-apprentissage / sur-apprentissage de la séance 1 :
 
-- **Arbre de décision : sur-apprentissage** (faible biais, forte variance). Le F1 vaut 1,000 en apprentissage contre 0,442 en test. Sur la figure 12, l'erreur d'apprentissage tombe à 0 quand la profondeur augmente, alors que l'erreur de validation stagne autour de 0,56 au-delà d'une dizaine de niveaux.
-- **k-NN : variance notable** (écart de 0,145). Réduire k augmente la complexité, mais l'erreur de validation continue de baisser jusqu'à k = 1 : avec un grand k, le vote est dominé par la classe majoritaire.
-- **Régression logistique, Naive Bayes, SVM RBF : biais**. Les écarts sont faibles mais les F1 modestes, à cause du seuil défavorable à la classe minoritaire.
-- **SVM linéaire : sous-apprentissage complet**.
-- Les écarts-types en validation croisée sont faibles (≤ 0,036) : les résultats sont stables.
+- **Arbre de décision et k-NN avec k = 1 : sur-apprentissage.** Leur score est parfait sur l'apprentissage, mais l'écart avec le test atteint environ 0,27. L'arbre sans limite de profondeur pousse jusqu'à des feuilles pures, et le k-NN avec k = 1 retrouve chaque vin d'apprentissage comme son propre voisin.
+- **k-NN** : l'écart diminue quand k augmente (de 0,265 pour k = 1 à 0,025 pour k = 5). Un k faible donne un biais faible et une variance élevée (cours k-NN).
+- **Régression logistique et SVM** : écarts proches de 0, mais scores faibles (0,44 à 0,61). C'est du **biais** : le seuil par défaut sacrifie les bons vins.
+- **Naive Bayes** : écart nul et meilleur score de test. C'est le meilleur compromis parmi les modèles de base.
 
-L'optimisation doit donc **réduire la variance** de l'arbre et du k-NN, et **corriger le biais de seuil** des autres modèles.
+L'optimisation doit donc réduire la variance de l'arbre et du k-NN, et corriger le biais des modèles linéaires.
 
 # 5. Optimisation des hyperparamètres
 
 ## 5.1 Protocole
 
-- **Grid Search** (`GridSearchCV`) pour la régression logistique, le SVM RBF et Naive Bayes, dont les grilles sont petites.
-- **Random Search** (`RandomizedSearchCV`, 60 tirages) pour l'arbre de décision et le k-NN, dont les espaces de recherche sont plus grands.
-- Validation croisée **stratifiée à 5 plis** (k-fold) sur l'apprentissage uniquement, avec le **F1-score** comme critère. Le test n'est utilisé qu'une seule fois, à la fin (séance 1).
-- `class_weight` ∈ {`None`, `'balanced'`} fait partie de l'espace de recherche des modèles qui l'acceptent.
-- Le SVM linéaire n'est pas réoptimisé : la famille linéaire est couverte par la régression logistique et le SVM par sa version à noyau RBF.
+- **Grid Search** (`GridSearchCV`) pour la régression logistique et le SVM ; **Random Search** (`RandomizedSearchCV`, 30 tirages) pour l'arbre de décision et le k-NN, dont les espaces de recherche sont plus grands.
+- Validation croisée à **5 plis** (`cv=5`, comme dans le TP Ensemble), sur l'apprentissage uniquement.
+- Critère optimisé : la **moyenne de l'accuracy et du rappel** (TP1).
+- Hyperparamètres testés :
+  - régression logistique : C et `class_weight` ;
+  - SVM : noyau, C et `class_weight` ;
+  - arbre (`entropy`) : `max_depth`, `min_samples_split`, `min_samples_leaf` et `class_weight` (paramètres de la forêt aléatoire du TP Ensemble) ;
+  - k-NN : k, distance euclidienne ou de Manhattan, vote simple ou pondéré par la distance (TD3).
+- `class_weight='balanced'` (TP Ensemble) donne plus de poids à la classe minoritaire.
+- Naive Bayes n'est pas optimisé : il est utilisé sans hyperparamètre, comme dans le TP3.
 
-## 5.2 Résultats
+## 5.2 Résultats en validation croisée
 
-| Modèle | Méthode | Meilleurs hyperparamètres | F1 CV |
-|--------|---------|-----------------------------|----|
-| SVM RBF | Grid (32 comb.) | C = 100, gamma = 0,01, class_weight = balanced | **0,560** |
-| Régression logistique | Grid (12 comb.) | C = 0,01, class_weight = balanced | 0,549 |
-| Arbre de décision | Random (60 tirages) | entropy, max_depth = 5, min_samples_leaf = 24, class_weight = balanced | 0,510 |
-| Naive Bayes | Grid (12 comb.) | var_smoothing = 0,01 | 0,506 |
-| k-NN | Random (60 tirages) | k = 1, distance de Manhattan (p = 1), pondération par la distance | 0,497 |
+| Modèle | Meilleurs hyperparamètres | Moy. TP1 (CV) | Écart-type (CV) | Moy. TP1 train | Écart train − CV |
+|----------|------------------------------|--------|--------|--------|--------|
+| Arbre de décision | max_depth = 8, min_samples_split = 15, min_samples_leaf = 1, class_weight = balanced | **0,798** | 0,064 | 0,934 | 0,136 |
+| Régression logistique | C = 10, class_weight = balanced | 0,796 | 0,032 | 0,796 | **0,000** |
+| SVM | noyau linéaire, C = 1, class_weight = balanced | 0,791 | 0,045 | 0,797 | 0,006 |
+| k-NN | k = 12, Manhattan (p = 1), pondéré par la distance | 0,745 | 0,051 | 1,000 | 0,255 |
 
-: Tableau 5 – Meilleurs hyperparamètres (validation croisée à 5 plis)
+: Tableau 5 – Modèles optimisés (validation croisée à 5 plis sur l'apprentissage)
 
-**Tous les modèles qui l'acceptent retiennent `class_weight='balanced'`**, ce qui confirme que le déséquilibre des classes était la principale limite. L'arbre retenu est **peu profond (5 niveaux)** avec au moins 24 vins par feuille : la recherche a réduit sa variance.
+Pour le SVM, le meilleur score par noyau est de 0,791 (linéaire), 0,784 (RBF), 0,742 (sigmoïde) et 0,690 (polynomial).
 
-## 5.3 Grid Search ou Random Search ?
+- **`class_weight='balanced'` est retenu par les trois modèles qui l'acceptent** : le déséquilibre des classes était bien la principale limite des modèles de base.
+- Une fois les classes pondérées, une **frontière linéaire suffit** : le noyau linéaire est le meilleur pour le SVM.
+- La **régression logistique** et le **SVM** ont le même score sur l'apprentissage et en validation croisée : ils ne présentent pas de variance.
+- L'**arbre**, limité à 8 niveaux, sur-apprend encore (écart de 0,136). Le **k-NN** pondéré par la distance a un score d'apprentissage de 1,000, car chaque vin d'apprentissage est son propre voisin à distance nulle.
+- Les écarts-types (0,032 à 0,064) sont bien plus grands que les différences entre les trois meilleurs modèles (0,791 à 0,798) : ces modèles sont **équivalents** en validation croisée.
 
-Sur le SVM RBF, nous avons comparé la grille (32 combinaisons) à un Random Search de 16 tirages sur des intervalles continus de `C` et `gamma` :
+## 5.3 Choix du modèle final
 
-| | Grid Search | Random Search |
-|---|---|---|
-| Combinaisons testées | 32 | 16 |
-| Meilleur F1 (CV) | 0,560 | 0,545 |
-| Temps de calcul | environ 28 s | environ 17 s |
-| Meilleurs paramètres | C = 100, gamma = 0,01 | C = 0,22, gamma = 0,030 |
+Le sujet demande d'identifier le meilleur modèle selon un **compromis biais / variance**. Nous appliquons la règle suivante :
 
-: Tableau 6 – Comparaison Grid Search / Random Search sur le SVM RBF
+1. retenir les modèles dont le score de validation croisée est à moins d'un écart-type du meilleur (0,798 − 0,064 = 0,734) : les quatre modèles optimisés sont dans ce cas ;
+2. parmi eux, choisir celui dont l'écart entre apprentissage et validation est le plus faible.
 
-Le Random Search obtient un résultat proche en deux fois moins de combinaisons. Ici, la grille reste meilleure parce que l'espace est petit et bien choisi. Le Random Search devient avantageux quand le nombre d'hyperparamètres augmente, d'où son usage pour l'arbre (4 paramètres) et le k-NN.
-
-## 5.4 Modèles optimisés sur le test
-
-| Modèle optimisé | Accuracy | Précision | Rappel | F1 | AUC | Moy. TP1 | F1 train |
-|---|---|---|---|---|---|---|---|
-| **SVM RBF** | 0,721 | 0,389 | 0,813 | **0,526** | **0,841** | **0,767** | 0,583 |
-| Régression logistique | 0,717 | 0,384 | 0,797 | 0,518 | 0,823 | 0,757 | 0,546 |
-| Arbre de décision | 0,695 | 0,366 | **0,817** | 0,506 | 0,808 | 0,756 | 0,533 |
-| k-NN | **0,802** | **0,482** | 0,494 | 0,488 | 0,685 | 0,648 | 1,000 |
-| Naive Bayes | 0,734 | 0,377 | 0,606 | 0,465 | 0,765 | 0,670 | 0,505 |
-
-: Tableau 7 – Modèles optimisés sur le test
-
-![F1-score sur le test avant et après optimisation](figures/13_avant_apres_optimisation.png)
-
-- Le F1 progresse nettement pour le **SVM RBF** (0,396 → 0,526), la **régression logistique** (0,428 → 0,518) et l'**arbre** (0,442 → 0,506). Le rappel passe d'environ 0,3–0,4 à environ 0,8.
-- L'AUC de l'arbre bondit de 0,655 à 0,808 : en limitant la profondeur, ses feuilles produisent des probabilités nuancées.
-- Le **k-NN** ne progresse pas : la recherche choisit k = 1, un modèle qui sur-apprend (F1 train = 1,0) et dont l'AUC chute (0,685), car il ne produit que des scores 0 ou 1.
-- **Naive Bayes** n'est pas amélioré : ses limites viennent de ses hypothèses, pas de ses hyperparamètres.
-
-![Courbes ROC des modèles optimisés](figures/14_roc_optimises.png)
-
-## 5.5 Modèle final
-
-Le modèle final est choisi sur le **F1 en validation croisée**, et non sur le test, pour ne pas biaiser l'évaluation : il s'agit du **SVM à noyau RBF** (`C=100`, `gamma=0.01`, `class_weight='balanced'`), associé au `StandardScaler` dans un `Pipeline`.
+Le modèle retenu est la **régression logistique** (`C=10`, `class_weight='balanced'`). Le test n'est utilisé qu'une seule fois, pour ce modèle (séance 1).
 
 | | Prédit « pas bon » | Prédit « bon » |
 |---|---|---|
-| **Réel « pas bon »** (1 064) | 744 | 320 |
-| **Réel « bon »** (251) | 47 | **204** |
+| **Réel « pas bon »** (355) | 274 | 81 |
+| **Réel « bon »** (45) | 7 | **38** |
 
-: Tableau 8 – Matrice de confusion du modèle final sur le test
+: Tableau 6 – Matrice de confusion du modèle final sur le test
 
-C'est aussi le modèle qui présente le **meilleur compromis biais / variance** :
+| Accuracy | Précision | Rappel | F1 | AUC | Moy. TP1 test | Moy. TP1 train |
+|---|---|---|---|---|---|---|
+| 0,780 | 0,319 | **0,844** | 0,463 | 0,869 | **0,812** | 0,796 |
 
-- il obtient les meilleurs F1 (0,526), AUC (0,841) et moyenne accuracy + rappel du TP1 (0,767) sur le test ;
-- l'écart entre apprentissage et test est faible (F1 0,583 contre 0,526), alors que le k-NN optimisé sur-apprend ;
-- il détecte **81 % des bons vins** (204 sur 251), au prix d'une précision de 0,39 : 320 vins sont signalés « bons » à tort.
+: Tableau 7 – Performances du modèle final
 
-Ce compromis précision / rappel dépend du seuil de décision. Avec `class_weight='balanced'`, le modèle classe un vin « bon » dès que sa probabilité estimée dépasse environ **19 %**, et non 50 %. Selon l'usage, on peut déplacer ce seuil le long de la courbe ROC. Pour constituer une sélection « premium » sans erreur, on relèverait le seuil afin de privilégier la précision.
+- Le critère du TP1 vaut **0,812** sur le test, cohérent avec la validation croisée et l'apprentissage (0,796) : pas de sur-apprentissage.
+- Le modèle détecte **38 des 45 bons vins** (rappel 0,844), au prix de 81 fausses alertes (précision 0,319).
+- Par rapport à la régression logistique de base, la pondération des classes fait baisser l'accuracy (0,888 → 0,780), mais le rappel passe de 0,289 à 0,844.
 
-![Importance des variables pour le modèle final (permutation)](figures/15_importance_variables.png)
-
-**Interprétation.** L'importance par permutation (figure 15) mesure la baisse du F1 quand on mélange une variable. La **densité** arrive largement en tête, suivie du type de vin et du SO2 total. L'**alcool**, pourtant la variable la plus corrélée à la qualité, paraît peu important. Cela s'explique par sa forte corrélation avec la densité (r = −0,69) : quand on mélange l'alcool, le modèle retrouve l'essentiel de l'information dans la densité. L'importance par permutation mesure ce qu'une variable apporte **en plus des autres**, et non son lien direct avec la cible.
+Le test ne contient que 45 bons vins : chaque bon vin représente 2,2 points de rappel, et les métriques de test sont donc assez incertaines.
 
 # 6. Conclusion
 
 | Étape | Résultat principal |
 |---|---|
-| Prétraitement | 6 497 → 5 258 vins (1 177 doublons, 62 valeurs extrêmes) ; aucune valeur manquante ; 19,1 % de bons vins |
-| Analyse | Alcool, densité, chlorures et acidité volatile sont les variables les plus liées à la qualité ; plusieurs variables sont redondantes |
-| Normalisation | Indispensable pour k-NN et SVM, sans effet notable sur l'arbre et Naive Bayes |
-| Sélection de variables | Noyau de 6 variables identifié, mais les 12 variables donnent de meilleurs résultats |
-| Modèles de base | F1 de 0,40 à 0,49 : arbre en sur-apprentissage, modèles linéaires biaisés vers la classe majoritaire |
-| Optimisation | `class_weight='balanced'` décisif ; meilleur modèle : **SVM RBF**, F1 = 0,526 et AUC = 0,841 sur le test |
+| Prétraitement | 1 599 vins rouges ; aucune valeur manquante ni variable catégorielle ; valeurs atypiques conservées ; 13,6 % de bons vins |
+| Analyse | Alcool, acidité volatile, acide citrique et sulfates sont les variables les plus liées à la qualité |
+| Sélection de variables | 8 variables retenues sur 11 |
+| Normalisation | Indispensable pour le k-NN et les SVM à noyau, sans effet sur l'arbre et Naive Bayes |
+| Modèles de base | Naive Bayes le meilleur (0,771) ; arbre et k-NN (k = 1) en sur-apprentissage ; modèles linéaires biaisés vers la classe majoritaire |
+| Optimisation | `class_weight='balanced'` décisif ; régression logistique, SVM et arbre équivalents en validation croisée |
+| Modèle final | **Régression logistique** : critère du TP1 0,812 et rappel 0,844 sur le test |
 
-Le déséquilibre des classes est le point central de ce projet. Les modèles non pondérés obtiennent une accuracy flatteuse mais détectent mal les bons vins. La pondération des classes, choisie par validation croisée, fait passer le rappel d'environ 0,3 à 0,8. Le SVM à noyau RBF optimisé offre le meilleur équilibre entre performance et stabilité.
+Le déséquilibre des classes est le point central de ce projet. Sans pondération, les modèles linéaires ont une accuracy élevée mais détectent mal les bons vins. Avec `class_weight='balanced'`, la régression logistique devient le modèle le plus stable, et elle détecte la grande majorité des bons vins.
 
-**Limites.** La qualité est une **note sensorielle** attribuée par des dégustateurs : les 11 mesures physico-chimiques n'en expliquent qu'une partie, ce qui plafonne les performances (F1 autour de 0,5).
+**Limites :**
 
-**Perspectives.**
-
-- Tester des méthodes d'ensemble (forêts aléatoires, boosting).
-- Entraîner des modèles séparés pour les rouges et les blancs.
-- Choisir le seuil de décision par validation croisée selon l'usage visé.
-- Évaluer des techniques de rééquilibrage des classes (sur-échantillonnage de la classe minoritaire).
+- La qualité est une note donnée par des dégustateurs : les mesures physico-chimiques n'en expliquent qu'une partie.
+- Avec seulement 45 bons vins dans le test, les métriques de test varient beaucoup d'un vin à l'autre.
+- Le modèle final a une précision faible : environ deux tiers des vins qu'il classe « bons » ne le sont pas.
 
 # 7. Bonus réalisés
 
 | Bonus | Réalisation |
 |---|---|
 | Dépôt Git | Dépôt initialisé avec README, prêt à être poussé sur GitHub ou GitLab |
-| Tests unitaires | 12 tests `pytest` (`tests/test_vin_qualite.py`) : chargement, nettoyage, encodage, cible, séparation stratifiée, métriques, cohérence du seuil, prédiction |
-| Conteneurisation | `Dockerfile` : installe les dépendances, réentraîne le modèle, lance les tests, puis démarre l'application |
-| Application web | `app.py` (Streamlit) : prédiction pour un vin du jeu de test ou pour des mesures saisies, avec la probabilité estimée et le seuil de décision |
-
-Le module `src/vin_qualite.py` regroupe les fonctions du notebook (chargement, nettoyage, encodage, séparation, évaluation, modèle final) ; il reproduit exactement les résultats du tableau 8.
+| Tests unitaires | 10 tests `pytest` : chargement, valeurs manquantes, cible, séparation, sélection, métriques, résultats du modèle final, prédiction |
+| Conteneurisation | `Dockerfile` : installe les dépendances, entraîne le modèle final et démarre l'application |
+| Application web | `app.py` (Streamlit) : saisie des 8 mesures d'un vin et prédiction « bon vin » ou « pas bon » |
 
 # Références
 
-- Cours Machine Learning I, séances 1 à 3, TP1 (arbre de décision), TP3 (Naive Bayes), TD1 et TD2 – EFREI 2026/2027.
+- Cours Machine Learning I, séances 1 à 6, TP1 (arbre de décision), TP3 (Naive Bayes), TP SVM / KNN / Ensemble, TP régression, TD1 à TD4 – EFREI 2026/2027.
 - P. Cortez, A. Cerdeira, F. Almeida, T. Matos, J. Reis. *Modeling wine preferences by data mining from physicochemical properties*. Decision Support Systems, 47(4), 547–553, 2009.
-- Documentation scikit-learn : https://scikit-learn.org
