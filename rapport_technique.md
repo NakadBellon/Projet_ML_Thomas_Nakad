@@ -1,7 +1,7 @@
 ---
 title: "Classification de la qualité du vin"
 subtitle: "Projet 2 – Machine Learning I – ING2-BDML – EFREI 2026/2027"
-author: "[Nom 1] et [Nom 2]"
+author: "Nakad BELLON et Thomas BELOT"
 date: "Octobre 2026"
 lang: fr
 ---
